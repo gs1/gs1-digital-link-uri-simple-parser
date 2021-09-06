@@ -1,0 +1,97 @@
+name: GS1 Digital Link URI parser
+
+on:
+  push:
+  pull_request:
+
+jobs:
+
+  #
+  #  CI jobs
+  #
+
+  ci-clang:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: clang CI
+      run: |
+        make -j `nproc` test CC=clang SANITIZE=yes
+        make clean
+        make -j `nproc` example CC=clang SANITIZE=yes
+        ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+
+  ci-gcc:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: gcc CI
+      run: |
+        make -j `nproc` test CC=gcc
+        make clean
+        make -j `nproc` example CC=gcc
+        ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+
+  ci-msvc:
+
+    runs-on: windows-latest
+
+    steps:
+
+    - uses: actions/checkout@v2
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1
+
+    - name: MSVC CI
+      run: |
+        msbuild /t:gs1DLparser /t:gs1DLparserUnitTests /p:Configuration=release /p:Platform="x86" gs1DLparser.sln
+        Release\gs1DLparserUnitTests.exe
+        Release\gs1DLparser.exe 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+
+  ci-macos:
+
+    runs-on: macos-10.15
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: clang CI
+      run: |
+        make -j `sysctl -n hw.logicalcpu` test SANITIZE=noleak
+        make clean
+        make -j `sysctl -n hw.logicalcpu` example SANITIZE=noleak
+        ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+
+  ci-scan-build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: clang static analyser CI
+      run: |
+        sudo apt-get update
+        sudo apt-get -y --no-install-recommends install clang-tools
+        scan-build -o plist make -j `nproc` test CC=clang
+        make clean
+        scan-build -o plist make -j `nproc` example CC=clang
+        [ "$(find plist/ -name *.html)" = '' ];
+
+    - name: "clang static analyzer: Store assets on failure"
+      uses: actions/upload-artifact@v2
+      with:
+        name: clang-scan.tgz
+        path: plist/**/*.html
+        retention-days: 30
+      if: ${{ failure() }}

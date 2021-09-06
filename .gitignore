@@ -1,0 +1,10 @@
+*.o
+*.d
+tags
+.vs/
+*.vcxproj.user
+.*.swp
+corpus/
+crash-*
+fuzz-*
+gs1dlparser-fuzzer
