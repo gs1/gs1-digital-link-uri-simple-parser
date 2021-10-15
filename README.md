@@ -1,3 +1,5 @@
+**<span style="color:red">This is an initial release. While we believe it to be robust and correct, at the time of writing (2021-10-15), it has not been rigorously tested and must be used with care</span>**
+
 GS1 Digital Link URI parser
 ===========================
 
