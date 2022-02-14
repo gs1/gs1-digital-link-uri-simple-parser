@@ -539,9 +539,9 @@ nextPass:
 #endif
 #include "acutest.h"
 #if defined(__clang__)
-#pragma clang diagnostic push
+#pragma clang diagnostic pop
 #elif defined(__GNUC__)
-#pragma GCC diagnostic push
+#pragma GCC diagnostic pop
 #endif
 
 
