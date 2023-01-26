@@ -389,10 +389,10 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 
 out:
 
-	if (qp)			// Restore original query parameter delimeter
+	if (qp)			// Restore original query parameter delimiter
 		*(qp-1) = '?';
 
-	if (fr)			// Restore original fragment delimieter
+	if (fr)			// Restore original fragment delimiter
 		*(fr-1) = '#';
 
 	return ret;
