@@ -95,3 +95,14 @@ jobs:
         path: plist/**/*.html
         retention-days: 30
       if: ${{ failure() }}
+
+    - name: check includes with IWYU
+      run: |
+        sudo apt-get -y --no-install-recommends install iwyu
+        find -name '*.c' -print0 | xargs -0 -n1 -i bash -c 'iwyu -DPRNT -DUNIT_TESTS {}; [[ $? = 2 ]] || false'
+
+    - name: cppcheck
+      run: |
+        sudo apt-get -y --no-install-recommends install cppcheck
+        cppcheck --enable=all --force -U FUZZER --suppress=missingIncludeSystem .
+
