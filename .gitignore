@@ -8,3 +8,4 @@ corpus/
 crash-*
 fuzz-*
 gs1dlparser-fuzzer
+example-bin
