@@ -2,7 +2,7 @@
  * GS1 Digital Link URI parser
  *
  * @file gs1dlparser.h
- * @author Copyright (c) 2021 GS1 AISBL.
+ * @author Copyright (c) 2021-2023 GS1 AISBL.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

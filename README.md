@@ -21,7 +21,7 @@ AIs.
 License
 -------
 
-Copyright (c) 2000-2021 GS1 AISBL
+Copyright (c) 2000-2023 GS1 AISBL
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 this library except in compliance with the License.
