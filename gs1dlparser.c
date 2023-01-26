@@ -564,7 +564,7 @@ static void test_parseDLuri(struct gs1DLparser *ctx, bool should_succeed, const 
 
 	strcpy(in, dlData);
 
-	TEST_CHECK(gs1_parseDLuri(ctx, in) ^ !should_succeed);
+	TEST_CHECK(gs1_parseDLuri(ctx, in) ^ (!should_succeed));
 	TEST_MSG("Err: %s", ctx->err);
 
 	TEST_CHECK(strcmp(dlData, in) == 0);
