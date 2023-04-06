@@ -856,7 +856,7 @@ static void test_dl_parseDLuri(void) {
 		"{\"01\":\"12312312312333\",\"99\":\"ABC\",\"98\":\"XYZ\"}");
 
 	test_parseDLuri(ctx, false,
-		"https://a/01/12312312312333?99=", "", "", "", "", "", "", "", ""); 	// Can't end in slash
+		"https://a/01/12312312312333?99=", "", "", "", "", "", "", "", ""); 	// Can't have empty AI value
 
 	test_parseDLuri(ctx, true,
 		"https://a/01/12312312312333?&&&99=ABC&&&&&&98=XYZ&&&",		// Extraneous query param separators
