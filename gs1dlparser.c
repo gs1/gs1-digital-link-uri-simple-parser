@@ -268,6 +268,11 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		if ((p = strchr(++r, '/')) == NULL)
 			p = r + strlen(r);
 
+		if (p == r) {
+			snprintf(ctx->err, sizeof(ctx->err), "AI (%.*s) value path element is empty", (int)ailen, ai);
+			goto fail;
+		}
+
 		// Reverse percent encoding
 		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, r, (size_t)(p-r))) == 0) {
 			sprintf(ctx->err, "Decoded AI (%.*s) from DL path info too long", (int)ailen, ai);
@@ -339,8 +344,13 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 			continue;
 		}
 
-		// Reverse percent encoding
 		e++;
+		if (r == e) {
+			snprintf(ctx->err, sizeof(ctx->err), "AI (%.*s) value query element is empty", (int)ailen, ai);
+			goto fail;
+		}
+
+		// Reverse percent encoding
 		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, e, (size_t)(r-e))) == 0) {
 			sprintf(ctx->err, "Decoded AI (%.*s) value from DL query params too long", (int)ailen, ai);
 			goto fail;
@@ -801,6 +811,17 @@ static void test_dl_parseDLuri(void) {
 	test_parseDLuri(ctx, false,
 		"https://a/stem/00/006141411234567890/", "", "", "", "", "", "", "", ""); 	// Can't end in slash
 
+	test_parseDLuri(ctx, true,					// Empty query params
+		"https://a/00/006141411234567890?",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
 	test_parseDLuri(ctx, true,
 		"https://a/stem/00/006141411234567890?99=ABC",			// Query params; no FNC1 req after pathinfo
 		"^0000614141123456789099ABC",
@@ -833,6 +854,9 @@ static void test_dl_parseDLuri(void) {
 		"^0112312312312333^99ABC^98XYZ",
 		"(01)12312312312333(99)ABC(98)XYZ",
 		"{\"01\":\"12312312312333\",\"99\":\"ABC\",\"98\":\"XYZ\"}");
+
+	test_parseDLuri(ctx, false,
+		"https://a/01/12312312312333?99=", "", "", "", "", "", "", "", ""); 	// Can't end in slash
 
 	test_parseDLuri(ctx, true,
 		"https://a/01/12312312312333?&&&99=ABC&&&&&&98=XYZ&&&",		// Extraneous query param separators
