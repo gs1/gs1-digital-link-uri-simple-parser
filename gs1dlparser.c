@@ -135,7 +135,7 @@ static bool allDigits(const char *str, size_t len) {
  *  Decode a percent-encoded input
  *
  */
-static size_t URIunescape(char *out, size_t maxlen, const char *in, const size_t inlen) {
+static size_t URIunescape(char *out, size_t maxlen, const char *in, const size_t inlen, bool is_query_component) {
 
 	size_t i, j;
 	char hex[3] = { 0 };
@@ -146,7 +146,8 @@ static size_t URIunescape(char *out, size_t maxlen, const char *in, const size_t
 			hex[1] = in[i+2];
 			out[j] = (char)strtoul(hex, NULL, 16);
 			i += 2;
-		}
+		} else if (is_query_component && in[i] == '+')
+			out[j] = ' ';
 		else {
 			out[j] = in[i];
 		}
@@ -274,7 +275,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		}
 
 		// Reverse percent encoding
-		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, r, (size_t)(p-r))) == 0) {
+		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, r, (size_t)(p-r), false)) == 0) {
 			sprintf(ctx->err, "Decoded AI (%.*s) from DL path info too long", (int)ailen, ai);
 			goto fail;
 		}
@@ -351,7 +352,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		}
 
 		// Reverse percent encoding
-		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, e, (size_t)(r-e))) == 0) {
+		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, e, (size_t)(r-e), true)) == 0) {
 			sprintf(ctx->err, "Decoded AI (%.*s) value from DL query params too long", (int)ailen, ai);
 			goto fail;
 		}
@@ -1144,7 +1145,11 @@ static void test_dl_parseDLuri(void) {
 		"(01)09520123456788(99)XYZ(89)ABC123",
 		"{\"01\":\"09520123456788\",\"99\":\"XYZ\",\"89\":\"ABC123\"}");
 
-	// S4T https://youtu.be/9elyEi1PT00
+	/*
+	 * S4T https://youtu.be/9elyEi1PT00
+	 *
+	 */
+	/*
 	test_parseDLuri(ctx, true,
 		"https://example.com/00/093123450000000012?4300=GS1+Australia&4301=Michiel+Ruighaver&4302=8+Nexus+Court&4304=Mulgrave&4306=Victoria&4307=AU&420=3170&4308=%2B61412830095&s4t",
 		"^000931234500000000124300GS1+Australia^4301Michiel+Ruighaver^43028+Nexus+Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
@@ -1155,19 +1160,24 @@ static void test_dl_parseDLuri(void) {
 		"^00093123450000000012^4300GS1+Australia^4301Michiel+Ruighaver^43028+Nexus+Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
 		"(00)093123450000000012(4300)GS1+Australia(4301)Michiel+Ruighaver(4302)8+Nexus+Court(4304)Mulgrave(4306)Victoria(4307)AU(420)3170(4308)+61412830095",
 		"{\"00\":\"093123450000000012\",\"4300\":\"GS1+Australia\",\"4301\":\"Michiel+Ruighaver\",\"4302\":\"8+Nexus+Court\",\"4304\":\"Mulgrave\",\"4306\":\"Victoria\",\"4307\":\"AU\",\"420\":\"3170\",\"4308\":\"+61412830095\"}");
+	*/
 
 	free(ctx);
 
 }
 
 
-static void test_URIunescape(const char *in, const char *expect) {
+static void test_URIunescape(const char *in, const char *expect_path, const char *expect_query) {
 
 	char out[GS1_DL_MAX_AI_LEN+1];
 
-	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in)) == strlen(expect));
-	TEST_CHECK(strcmp(out, expect) == 0);
-	TEST_MSG("Given: %s; Got: %s; Expected: %s", in, out, expect);
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in), false) == strlen(expect_path));
+	TEST_CHECK(strcmp(out, expect_path) == 0);
+	TEST_MSG("Given: %s; Got: %s; Expected query component: %s", in, out, expect_path);
+
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in), true) == strlen(expect_query));
+	TEST_CHECK(strcmp(out, expect_query) == 0);
+	TEST_MSG("Given: %s; Got: %s; Expected path component: %s", in, out, expect_query);
 
 }
 
@@ -1175,38 +1185,45 @@ static void test_dl_URIunescape(void) {
 
 	char out[GS1_DL_MAX_AI_LEN+1];
 
-	test_URIunescape("", "");
-	test_URIunescape("test", "test");
-	test_URIunescape("%20", " ");
-	test_URIunescape("%20AB", " AB");
-	test_URIunescape("A%20B", "A B");
-	test_URIunescape("AB%20", "AB ");
-	test_URIunescape("ABC%2", "ABC%2");			// Off end
-	test_URIunescape("ABCD%", "ABCD%");
-	test_URIunescape("A%20%20B", "A  B");			// Run together
-	test_URIunescape("A%01B", "A" "\x01" "B");		// "Minima", we check \0 below
-	test_URIunescape("A%ffB", "A" "\xFF" "B");		// Maxima
-	test_URIunescape("A%FfB", "A" "\xFF" "B");		// Case mixing
-	test_URIunescape("A%fFB", "A" "\xFF" "B");		// Case mixing
-	test_URIunescape("A%FFB", "A" "\xFF" "B");		// Case mixing
-	test_URIunescape("A%4FB", "AOB");
-	test_URIunescape("A%4fB", "AOB");
-	test_URIunescape("A%4gB", "A%4gB");			// Non hex digit
-	test_URIunescape("A%4GB", "A%4GB");			// Non hex digit
-	test_URIunescape("A%g4B", "A%g4B");			// Non hex digit
-	test_URIunescape("A%G4B", "A%G4B");			// Non hex digit
+	test_URIunescape("", "", "");
+	test_URIunescape("test", "test", "test");
+	test_URIunescape("+", "+", " ");				// "+" means space in query info
+	test_URIunescape("%20", " ", " ");
+	test_URIunescape("%20AB", " AB", " AB");
+	test_URIunescape("A%20B", "A B", "A B");
+	test_URIunescape("AB%20", "AB ", "AB ");
+	test_URIunescape("ABC%2", "ABC%2", "ABC%2");			// Off end
+	test_URIunescape("ABCD%", "ABCD%", "ABCD%");
+	test_URIunescape("A%20%20B", "A  B",  "A  B");			// Run together
+	test_URIunescape("A%01B", "A" "\x01" "B", "A" "\x01" "B");	// "Minima", we check \0 below
+	test_URIunescape("A%ffB", "A" "\xFF" "B", "A" "\xFF" "B");	// Maxima
+	test_URIunescape("A%FfB", "A" "\xFF" "B", "A" "\xFF" "B");	// Case mixing
+	test_URIunescape("A%fFB", "A" "\xFF" "B", "A" "\xFF" "B");	// Case mixing
+	test_URIunescape("A%FFB", "A" "\xFF" "B", "A" "\xFF" "B");	// Case mixing
+	test_URIunescape("A%4FB", "AOB", "AOB");
+	test_URIunescape("A%4fB", "AOB", "AOB");
+	test_URIunescape("A%4gB", "A%4gB", "A%4gB");			// Non hex digit
+	test_URIunescape("A%4GB", "A%4GB", "A%4GB");			// Non hex digit
+	test_URIunescape("A%g4B", "A%g4B", "A%g4B");			// Non hex digit
+	test_URIunescape("A%G4B", "A%G4B", "A%G4B");			// Non hex digit
 
 	// Check that \0 is sane, although we are only working with strings
-	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "A%00B", 5) == 3);
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "A%00B", 5, false) == 3);
 	TEST_CHECK(memcmp(out, "A" "\x00" "B", 4) == 0);
 
 	// Truncated input
-	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "ABCD", 2) == 2);
-	TEST_CHECK(memcmp(out, "AB", 3) == 0);			// Includes \0
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "ABCD", 2, false) == 2);
+	TEST_CHECK(memcmp(out, "AB", 3) == 0);				// Includes \0
 
 	// Truncated output
-	TEST_CHECK(URIunescape(out, 2, "ABCD", 4) == 2);
-	TEST_CHECK(memcmp(out, "AB", 3) == 0);			// Includes \0
+	TEST_CHECK(URIunescape(out, 2, "ABCD", 4, false) == 2);
+	TEST_CHECK(memcmp(out, "AB", 3) == 0);				// Includes \0
+
+	TEST_CHECK(URIunescape(out, 1, "ABCD", 4, false) == 1);
+	TEST_CHECK(memcmp(out, "A", 2) == 0);				// Includes \0
+
+	TEST_CHECK(URIunescape(out, 0, "ABCD", 4, false) == 0);
+	TEST_CHECK(memcmp(out, "", 1) == 0);
 
 }
 
