@@ -18,13 +18,8 @@
 #
 
 
-ifeq ($(MAKECMDGOALS),test)
-UNIT_TEST_CFLAGS = -DUNIT_TESTS
-endif
-
 ifeq ($(MAKECMDGOALS),fuzzer)
 SANITIZE = yes
-FUZZER_CFLAGS = -DFUZZER
 FUZZER_SAN_OPT = ,fuzzer
 FUZZER_CORPUS = corpus
 endif
@@ -59,7 +54,7 @@ NPROC = sysctl -n hw.ncpu
 endif
 
 LDLIBS = -lc
-CFLAGS = -g -O2 $(CFLAGS_FORTIFY) -Wall -Wextra -Wconversion -Wformat -Wformat-security -Wdeclaration-after-statement -pedantic -Werror -MMD -fPIC $(SAN_CFLAGS) $(UNIT_TEST_CFLAGS) $(DEBUG_CFLAGS) $(SLOW_TESTS_CFLAGS) $(FUZZER_CFLAGS)
+CFLAGS = -g -O2 $(CFLAGS_FORTIFY) -Wall -Wextra -Wconversion -Wformat -Wformat-security -Wdeclaration-after-statement -pedantic -Werror -MMD -fPIC $(SAN_CFLAGS) $(DEBUG_CFLAGS) $(SLOW_TESTS_CFLAGS)
 
 EXAMPLE_BIN = example-bin
 EXAMPLE_SRC = example.c
@@ -67,15 +62,16 @@ EXAMPLE_OBJ = $(EXAMPLE_SRC:.c=.o)
 
 TEST_BIN = gs1dlparser-test
 TEST_SRC = gs1dlparser.c
+TEST_OBJ = gs1dlparser-test.o
 
 FUZZER_BIN = gs1dlparser-fuzzer
 FUZZER_SRC = gs1dlparser.c
-FUZZER_OBJ = $(FUZZER_SRC:.c=.o)
+FUZZER_OBJ = gs1dlparser-fuzzer.o
 
 ALL_SRCS = $(wildcard *.c)
 SRCS = gs1dlparser.c
 OBJS = $(SRCS:.c=.o)
-DEPS = $(ALL_SRCS:.c=.d)
+DEPS = $(ALL_SRCS:.c=.d) $(TEST_OBJ:.o=.d) $(FUZZER_OBJ:.o=.d)
 
 
 .PHONY: all clean example test fuzzer
@@ -83,8 +79,32 @@ DEPS = $(ALL_SRCS:.c=.d)
 default: example
 
 
-%.o: %.c
+#
+#  Objects are invalidated whenever the toolchain or the compiler flags
+#  change, since goals such as test and SANITIZE=yes share objects with plain
+#  builds yet produce objects that cannot be linked together
+#
+BUILD_FLAGS = $(CC) $(CFLAGS)
+BUILD_FLAGS_STAMP = .build-flags
+
+.PHONY: FORCE
+FORCE:
+
+$(BUILD_FLAGS_STAMP): FORCE
+	@echo '$(BUILD_FLAGS)' | cmp -s - $@ || echo '$(BUILD_FLAGS)' > $@
+
+%.o: %.c $(BUILD_FLAGS_STAMP)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+#
+#  The unit tests and fuzzer are built from their own objects so that they
+#  are never linked with an object of the library, or of each other
+#
+$(TEST_OBJ): $(TEST_SRC) $(BUILD_FLAGS_STAMP)
+	$(CC) $(CFLAGS) -DUNIT_TESTS -c $< -o $@
+
+$(FUZZER_OBJ): $(FUZZER_SRC) $(BUILD_FLAGS_STAMP)
+	$(CC) $(CFLAGS) -DFUZZER -c $< -o $@
 
 
 #
@@ -97,8 +117,8 @@ $(EXAMPLE_BIN): $(OBJS) $(EXAMPLE_OBJ)
 #
 #  Test binary
 #
-$(TEST_BIN): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $(TEST_BIN)
+$(TEST_BIN): $(TEST_OBJ)
+	$(CC) $(CFLAGS) $(TEST_OBJ) -o $(TEST_BIN)
 
 
 #
@@ -107,7 +127,7 @@ $(TEST_BIN): $(OBJS)
 $(FUZZER_CORPUS)/:
 	mkdir -p $@
 
-$(FUZZER_BIN): $(OBJS)
+$(FUZZER_BIN): $(FUZZER_OBJ)
 	$(CC) $(CFLAGS) $(FUZZER_OBJ) -o $(FUZZER_BIN)
 
 
@@ -128,6 +148,6 @@ fuzzer: $(FUZZER_BIN) | $(FUZZER_CORPUS)/
 	@echo
 
 clean:
-	$(RM) $(OBJS) $(EXAMPLE_OBJ) $(EXAMPLE_BIN) $(TEST_BIN) $(FUZZER_BIN) $(DEPS)
+	$(RM) $(OBJS) $(TEST_OBJ) $(FUZZER_OBJ) $(EXAMPLE_OBJ) $(EXAMPLE_BIN) $(TEST_BIN) $(FUZZER_BIN) $(DEPS) $(BUILD_FLAGS_STAMP)
 
 -include $(DEPS)
