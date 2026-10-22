@@ -194,7 +194,7 @@ static ptrdiff_t URIunescape(char *out, size_t maxlen, const char *in, const siz
 bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 
 	char *p, *r, *e, *ai, *outai, *outval;
-	char *pi = NULL;			// Path info
+	const char *pi = NULL;			// Path info
 	char *qp = NULL;			// Query params
 	char *fr = NULL;			// Fragment
 	char *dp = NULL;			// DL path info

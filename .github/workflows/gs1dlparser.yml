@@ -1,8 +1,12 @@
+---
 name: GS1 Digital Link URI parser
 
 on:
   push:
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
 
@@ -16,14 +20,25 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: clang CI
-      run: |
-        make -j `nproc` test CC=clang SANITIZE=yes
-        make clean
-        make -j `nproc` example CC=clang SANITIZE=yes
-        ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+      - name: clang CI (with sanitizers)
+        run: |
+
+          # For llvm-symbolizer and lld
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install llvm lld
+
+          echo '::group::Unit tests (clang+ASAN+LSAN+UBSAN)'
+          make -j "$(nproc)" test CC=clang SANITIZE=yes
+          echo '::endgroup::'
+
+          echo '::group::Build and run example (clang+ASAN+LSAN+UBSAN)'
+          make -j "$(nproc)" example CC=clang SANITIZE=yes
+          ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+          echo '::endgroup::'
 
   ci-gcc:
 
@@ -31,14 +46,137 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: gcc CI
-      run: |
-        make -j `nproc` test CC=gcc
-        make clean
-        make -j `nproc` example CC=gcc
-        ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+      - name: gcc CI (with static analyser)
+        run: |
+          echo '::group::Unit tests (gcc+analyzer)'
+          make -j "$(nproc)" test CC=gcc ANALYZER=yes
+          echo '::endgroup::'
+
+          echo '::group::Build and run example (gcc+analyzer)'
+          make -j "$(nproc)" example CC=gcc ANALYZER=yes
+          ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+          echo '::endgroup::'
+
+  ci-valgrind:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Valgrind memcheck CI
+        run: |
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install valgrind
+
+          make -j "$(nproc)" test CC=gcc
+          valgrind --tool=memcheck \
+            --leak-check=full \
+            --show-leak-kinds=all \
+            --errors-for-leak-kinds=all \
+            --error-exitcode=1 \
+            --track-origins=yes \
+            -s ./gs1dlparser-test
+
+  ci-msan:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: MemorySanitizer CI
+        run: |
+
+          # For llvm-symbolizer and lld
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install llvm lld
+
+          make -j "$(nproc)" test MSAN=yes
+
+  ci-fuzzer:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Fuzzer CI
+        run: |
+
+          # For llvm-symbolizer and lld
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install llvm lld
+
+          echo '::group::Build fuzzer and seed its corpus (clang+ASAN+LSAN+UBSAN+libFuzzer)'
+          make -j "$(nproc)" fuzzer
+          echo '::endgroup::'
+
+          echo '::group::Fuzz briefly'
+          ./gs1dlparser-fuzzer -max_total_time=60 corpus
+          echo '::endgroup::'
+
+      - name: "Fuzzer: Store crashing inputs on failure"
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzzer-crashes
+          path: |
+            crash-*
+            leak-*
+            timeout-*
+          retention-days: 30
+        if: ${{ failure() }}
+
+  ci-coverage:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install lcov
+        run: |
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install lcov
+
+      - name: Run coverage
+        run: |
+          make coverage
+          {
+            echo "## Coverage"
+            echo '```'
+            lcov --summary coverage.info 2>&1 \
+              | grep -E '^  (lines|functions|branches)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce 100% line coverage
+        run: |
+          lcov --summary coverage.info --fail-under-lines 100
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage-report/
+          retention-days: 30
 
   ci-msvc:
 
@@ -46,30 +184,50 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v3
-    - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v1
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: MSVC CI
-      run: |
-        msbuild /t:gs1DLparser /t:gs1DLparserUnitTests /p:Configuration=release /p:Platform="x86" gs1DLparser.sln
-        Release\gs1DLparserUnitTests.exe
-        Release\gs1DLparser.exe 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v3
+
+      - name: MSVC CI
+        run: |
+          Write-Output '::group::MSBuild solution (Release|x64)'
+          msbuild /t:Build `
+            /p:Configuration=release `
+            /p:Platform="x64" `
+            /warnaserror gs1DLparser.sln
+          Write-Output '::endgroup::'
+
+          Write-Output '::group::Unit tests (MSVC)'
+          x64\Release\gs1DLparserUnitTests.exe
+          Write-Output '::endgroup::'
+
+          Write-Output '::group::Example (MSVC)'
+          x64\Release\gs1DLparser.exe 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+          Write-Output '::endgroup::'
 
   ci-macos:
 
-    runs-on: macos-10.15
+    runs-on: macos-latest
 
     steps:
 
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: clang CI
-      run: |
-        make -j `sysctl -n hw.logicalcpu` test SANITIZE=noleak
-        make clean
-        make -j `sysctl -n hw.logicalcpu` example SANITIZE=noleak
-        ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+      - name: clang CI (with sanitizers)
+        run: |
+          echo '::group::Unit tests (clang+ASAN+UBSAN)'
+          make -j "$(sysctl -n hw.logicalcpu)" test SANITIZE=noleak
+          echo '::endgroup::'
+
+          echo '::group::Build and run example (clang+ASAN+UBSAN)'
+          make -j "$(sysctl -n hw.logicalcpu)" example SANITIZE=noleak
+          ./example-bin 'https://id.gs1.org/01/09520123456788/10/ABC%2F123/21/12345?17=180426'
+          echo '::endgroup::'
 
   ci-scan-build:
 
@@ -77,32 +235,40 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-    - name: clang static analyser CI
-      run: |
-        sudo apt-get update
-        sudo apt-get -y --no-install-recommends install clang-tools
-        scan-build -o plist make -j `nproc` test CC=clang
-        make clean
-        scan-build -o plist make -j `nproc` example CC=clang
-        [ "$(find plist/ -name *.html)" = '' ];
+      - name: clang static analyser CI
+        run: |
+          sudo apt-get update
+          sudo apt-get -y --no-install-recommends install clang-tools
+          scan-build -o plist make -j "$(nproc)" test CC=clang
+          scan-build -o plist make -j "$(nproc)" example CC=clang
+          [ "$(find plist/ -name '*.html')" = '' ];
 
-    - name: "clang static analyzer: Store assets on failure"
-      uses: actions/upload-artifact@v2
-      with:
-        name: clang-scan.tgz
-        path: plist/**/*.html
-        retention-days: 30
-      if: ${{ failure() }}
+      - name: "clang static analyzer: Store assets on failure"
+        uses: actions/upload-artifact@v7
+        with:
+          name: clang-scan.tgz
+          path: plist/**/*.html
+          retention-days: 30
+        if: ${{ failure() }}
 
-    - name: check includes with IWYU
-      run: |
-        sudo apt-get -y --no-install-recommends install iwyu
-        find -name '*.c' -print0 | xargs -0 -n1 -i bash -c 'iwyu -DPRNT -DUNIT_TESTS {}; [[ $? = 2 ]] || false'
+      - name: check includes with IWYU
+        run: |
+          sudo apt-get -y --no-install-recommends install iwyu
+          for f in *.c; do
+            iwyu -Xiwyu --error -DPRNT -DUNIT_TESTS "$f"
+          done
 
-    - name: cppcheck
-      run: |
-        sudo apt-get -y --no-install-recommends install cppcheck
-        cppcheck --enable=all --force -U FUZZER --suppress=missingIncludeSystem .
-
+      - name: cppcheck
+        run: |
+          sudo apt-get -y --no-install-recommends install cppcheck
+          cppcheck --enable=all --force \
+            --error-exitcode=1 \
+            --check-level=exhaustive \
+            --inline-suppr \
+            --suppress='*:acutest.h' \
+            --suppress=missingIncludeSystem \
+            -U FUZZER .

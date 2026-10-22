@@ -24,7 +24,7 @@
 
 #include "gs1dlparser.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
 
 	// Responsibility of the user to ensure that buffers are adequate for
 	// the application
