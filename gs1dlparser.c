@@ -463,7 +463,7 @@ out:
 fail:
 
 	if (*ctx->err == '\0')
-		strcpy(ctx->err, "Failed to parse DL data");
+		strcpy(ctx->err, "Failed to parse DL data");  // LCOV_EXCL_LINE: belt-and-braces; every path reaching fail: already sets a specific error
 
 	DEBUG_PRINT("Parsing DL data failed: %s\n", ctx->err);
 
@@ -1367,6 +1367,88 @@ static void test_dl_parseDLuri(void) {
 		"(01)09520123456788(99)XYZ(89)ABC123",
 		"{\"01\":\"09520123456788\",\"99\":\"XYZ\",\"89\":\"ABC123\"}");
 
+	// Characters not permitted in a URI
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333<bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333>bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333{bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333}bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333\\bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333^bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333`bad", "URI contains illegal characters");
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333 bad", "URI contains illegal characters");
+
+	test_parseDLuriFail(ctx, "https://a/01/12312312312333/10/", "AI (10) value path element is empty");
+	test_parseDLuriFail(ctx, "https://a/01//12312312312333", "No GS1 DL keys found in path info");	// Empty AI path element
+
+	// Convenience strings for GS1 keys are not supported
+	test_parseDLuriFail(ctx, "https://a/gtin/12312312312333", "No GS1 DL keys found in path info");
+
+	test_parseDLuri(ctx,					// GTIN-13 -> GTIN-14 in query params
+		"https://a/8004/9520614141234567?01=2112345678900",
+		"^80049520614141234567^0102112345678900",
+		"^80049520614141234567^0102112345678900",
+		"(8004)9520614141234567(01)02112345678900",
+		"{\"8004\":\"9520614141234567\",\"01\":\"02112345678900\"}",
+		"^010211234567890080049520614141234567",
+		"^0102112345678900^80049520614141234567",
+		"(01)02112345678900(8004)9520614141234567",
+		"{\"01\":\"02112345678900\",\"8004\":\"9520614141234567\"}");
+
+	test_parseDLuri(ctx,					// GTIN-8 -> GTIN-14 in query params
+		"https://a/8004/9520614141234567?01=02345673",
+		"^80049520614141234567^0100000002345673",
+		"^80049520614141234567^0100000002345673",
+		"(8004)9520614141234567(01)00000002345673",
+		"{\"8004\":\"9520614141234567\",\"01\":\"00000002345673\"}",
+		"^010000000234567380049520614141234567",
+		"^0100000002345673^80049520614141234567",
+		"(01)00000002345673(8004)9520614141234567",
+		"{\"01\":\"00000002345673\",\"8004\":\"9520614141234567\"}");
+
+	test_parseDLuri(ctx,					// Escaping in the output formats
+		"https://a/01/12312312312333/10/A(B%22C%5CD",
+		"^011231231231233310A(B\"C\\D",
+		"^0112312312312333^10A(B\"C\\D",
+		"(01)12312312312333(10)A\\(B\"C\\D",
+		"{\"01\":\"12312312312333\",\"10\":\"A(B\\\"C\\\\D\"}",
+		"^011231231231233310A(B\"C\\D",
+		"^0112312312312333^10A(B\"C\\D",
+		"(01)12312312312333(10)A\\(B\"C\\D",
+		"{\"01\":\"12312312312333\",\"10\":\"A(B\\\"C\\\\D\"}");
+
+	test_parseDLuri(ctx,					// Empty fragment
+		"https://a/01/12312312312333/22/test/10/abc/21/xyz#",
+		"^011231231231233322test^10abc^21xyz",
+		"^0112312312312333^22test^10abc^21xyz",
+		"(01)12312312312333(22)test(10)abc(21)xyz",
+		"{\"01\":\"12312312312333\",\"22\":\"test\",\"10\":\"abc\",\"21\":\"xyz\"}",
+		"^011231231231233322test^10abc^21xyz",
+		"^0112312312312333^22test^10abc^21xyz",
+		"(01)12312312312333(22)test(10)abc(21)xyz",
+		"{\"01\":\"12312312312333\",\"22\":\"test\",\"10\":\"abc\",\"21\":\"xyz\"}");
+
+	test_parseDLuri(ctx,					// Empty fragment after query params
+		"https://a/stem/00/006141411234567890?99=ABC#",
+		"^0000614141123456789099ABC",
+		"^00006141411234567890^99ABC",
+		"(00)006141411234567890(99)ABC",
+		"{\"00\":\"006141411234567890\",\"99\":\"ABC\"}",
+		"^0000614141123456789099ABC",
+		"^00006141411234567890^99ABC",
+		"(00)006141411234567890(99)ABC",
+		"{\"00\":\"006141411234567890\",\"99\":\"ABC\"}");
+
+	test_parseDLuri(ctx,	// Ignored params at start, middle and end
+		"https://a/01/12312312312333?singleton1&unknown1=555&99=ABC&singleton2&unknown2=6666&98=XYZ&unknown3=777&singleton3",
+		"^011231231231233399ABC^98XYZ",
+		"^0112312312312333^99ABC^98XYZ",
+		"(01)12312312312333(99)ABC(98)XYZ",
+		"{\"01\":\"12312312312333\",\"99\":\"ABC\",\"98\":\"XYZ\"}",
+		"^011231231231233399ABC^98XYZ",
+		"^0112312312312333^99ABC^98XYZ",
+		"(01)12312312312333(99)ABC(98)XYZ",
+		"{\"01\":\"12312312312333\",\"99\":\"ABC\",\"98\":\"XYZ\"}");
+
 	/*
 	 * S4T https://youtu.be/9elyEi1PT00
 	 *
@@ -1483,6 +1565,22 @@ static void test_dl_limits(void) {
 
 	// One AI too many
 	appendf("&99=X");
+	TEST_CHECK(!gs1_parseDLuri(ctx, in));
+	TEST_CHECK(strcmp(ctx->err, "Too many AIs") == 0);
+	TEST_MSG("Err: %s", ctx->err);
+
+	// One short AI too many, in the path info
+	p = in + snprintf(in, inlen, "https://a/00/1");
+	for (i = 1; i <= GS1_DL_MAX_AIS; i++)
+		appendf("/%04d/1", 7000 + i);
+	TEST_CHECK(!gs1_parseDLuri(ctx, in));
+	TEST_CHECK(strcmp(ctx->err, "Too many AIs") == 0);
+	TEST_MSG("Err: %s", ctx->err);
+
+	// One short AI too many, in the query params
+	p = in + snprintf(in, inlen, "https://a/00/1?");
+	for (i = 1; i <= GS1_DL_MAX_AIS; i++)
+		appendf("%04d=1&", 7000 + i);
 	TEST_CHECK(!gs1_parseDLuri(ctx, in));
 	TEST_CHECK(strcmp(ctx->err, "Too many AIs") == 0);
 	TEST_MSG("Err: %s", ctx->err);
