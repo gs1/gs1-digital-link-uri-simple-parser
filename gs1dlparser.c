@@ -1673,10 +1673,29 @@ int LLVMFuzzerTestOneInput(const char *buf, size_t len) {
 	static struct gs1DLparser ctx;
 	static char in[65536];
 
+	// Output buffers of exactly the documented sizes, so that the
+	// sanitizers detect any overrun of the documented maxima
+	static char out_unbr[GS1_DL_MAX_OUT_UNBR];
+	static char out_brkt[GS1_DL_MAX_OUT_BRKT];
+	static char out_json[GS1_DL_MAX_OUT_JSON];
+
+	if (len > sizeof(in) - 1)
+		return 0;
+
 	memcpy(in, buf, len);
 	in[len] = '\0';
 
-	gs1_parseDLuri(&ctx, in);
+	if (!gs1_parseDLuri(&ctx, in))
+		return 0;
+
+	gs1_writeUnbracketedAIelementString(&ctx, false, false, out_unbr);
+	gs1_writeUnbracketedAIelementString(&ctx, false, true, out_unbr);
+	gs1_writeUnbracketedAIelementString(&ctx, true, false, out_unbr);
+	gs1_writeUnbracketedAIelementString(&ctx, true, true, out_unbr);
+	gs1_writeBracketedAIelementString(&ctx, false, out_brkt);
+	gs1_writeBracketedAIelementString(&ctx, true, out_brkt);
+	gs1_writeJSON(&ctx, false, out_json);
+	gs1_writeJSON(&ctx, true, out_json);
 
 	return 0;
 

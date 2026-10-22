@@ -18,7 +18,7 @@
 #
 
 
-ifeq ($(MAKECMDGOALS),fuzzer)
+ifneq ($(filter fuzzer fuzzer-corpus-seeds,$(MAKECMDGOALS)),)
 SANITIZE = yes
 FUZZER_SAN_OPT = ,fuzzer
 FUZZER_CORPUS = corpus
@@ -74,7 +74,7 @@ OBJS = $(SRCS:.c=.o)
 DEPS = $(ALL_SRCS:.c=.d) $(TEST_OBJ:.o=.d) $(FUZZER_OBJ:.o=.d)
 
 
-.PHONY: all clean example test fuzzer
+.PHONY: all clean example test fuzzer fuzzer-corpus-seeds
 
 default: example
 
@@ -140,7 +140,35 @@ example: $(EXAMPLE_BIN)
 test: $(TEST_BIN)
 	$(SAN_ENV) ./$(TEST_BIN) $(TEST)
 
-fuzzer: $(FUZZER_BIN) | $(FUZZER_CORPUS)/
+#
+#  Seed an empty corpus with the distinct string literals of the unit tests,
+#  merged so that only those adding coverage are retained
+#
+fuzzer-corpus-seeds: $(FUZZER_BIN) | $(FUZZER_CORPUS)/
+	@if [ -z "$$(ls -A $(FUZZER_CORPUS) 2>/dev/null)" ]; then \
+		temp_dir="$$(mktemp -d)" && \
+		awk ' \
+		{ \
+			while (match($$0, /"[^"\\]*(\\.[^"\\]*)*"/)) { \
+				str = substr($$0, RSTART, RLENGTH); \
+				$$0 = substr($$0, RSTART + RLENGTH); \
+				gsub(/^"|"$$/, "", str); \
+				gsub(/\\"/, "\"", str); gsub(/\\\\/, "\\", str); \
+				if (length(str) > 0 && !seen[str]++) { \
+					filename = sprintf("'"$$temp_dir"'/seeds-%05d", ++count); \
+					printf "%s", str > filename; \
+					close(filename); \
+				} \
+			} \
+		}' $(FUZZER_SRC) && \
+		echo "Merging extracted strings into $(FUZZER_CORPUS)" && \
+		$(SAN_ENV) ./$(FUZZER_BIN) -merge=1 $(FUZZER_CORPUS) "$$temp_dir" >/dev/null 2>&1; \
+		rm -rf "$$temp_dir"; \
+	else \
+		echo "Corpus $(FUZZER_CORPUS) already exists, skipping seed generation"; \
+	fi
+
+fuzzer: $(FUZZER_BIN) fuzzer-corpus-seeds | $(FUZZER_CORPUS)/
 	@echo
 	@echo Start fuzzing as follows:
 	@echo
