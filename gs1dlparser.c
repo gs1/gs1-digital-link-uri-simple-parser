@@ -55,6 +55,20 @@ static const char *uriCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr
 
 
 /*
+ *  Set of characters in uriCharacters that are illegal in a domain
+ *
+ *     _~?#@!$&'()*+,;=%
+ *
+ */
+static inline bool isBadDomainChar(char c) {
+	return c == '_' || c == '~' || c == '?' || c == '#'  || c == '@' ||
+	       c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' ||
+	       c == ')' || c == '*' || c == '+' || c == ','  || c == ';' ||
+	       c == '=' || c == '%';
+}
+
+
+/*
  *  List of Digital Link primary keys
  *
  *  These are used to identify the beginning of the DL pathinfo part.
@@ -202,18 +216,27 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		goto fail;
 	}
 
-	if (strlen(p) >= 8 && strncmp(p, "https://", 8) == 0)
+	if (strncmp(p, "https://", 8) == 0 || strncmp(p, "HTTPS://", 8) == 0)
 		p += 8;
-	else if (strlen(p) >= 7 && strncmp(p, "http://", 7) == 0)
+	else if (strncmp(p, "http://", 7) == 0 || strncmp(p, "HTTP://", 7) == 0)
 		p += 7;
 	else {
-		strcpy(ctx->err, "Scheme must be http:// or https://");
+		strcpy(ctx->err, "Scheme must be http:// or HTTP:// or https:// or HTTPS://");
 		goto fail;
 	}
 
 	DEBUG_PRINT("  Scheme %.*s\n", (int)(p-dlData-3), dlData);
 
-	if (((r = strchr(p, '/')) == NULL) || r-p < 1) {
+	// Scan domain for '/' delimiter while validating characters
+	r = p;
+	while (*r && *r != '/') {
+		if (isBadDomainChar(*r)) {
+			strcpy(ctx->err, "Domain contains illegal characters");
+			goto fail;
+		}
+		r++;
+	}
+	if (*r != '/' || r-p < 1) {
 		strcpy(ctx->err, "URI must contain a domain and path info");
 		goto fail;
 	}
@@ -720,6 +743,94 @@ static void test_dl_parseDLuri(void) {
 		"^00006141411234567890",
 		"(00)006141411234567890",
 		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, true,					// HTTP
+		"HTTP://a/00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, true,					// HTTPS
+		"HTTPS://a/00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, false,  "HtTp://a/00/006141411234567890", "", "", "", "", "", "", "", "");	// Mixed-case scheme forbidden
+
+	/*
+	 *  To prevent ossification, we don't strictly validate the form of the
+	 *  domain (IPv4/6, ports, etc.), only the characterset
+	 *
+	 */
+	test_parseDLuri(ctx, true,					// Punycode
+		"https://xn--fsq.xn--0zwm56d/00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, true,					// Explicit FQDN
+		"https://a./00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, true,					// Port specified
+		"https://a:65535/00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, true,					// IPv4
+		"https://192.0.2.1/00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, true,					// IPv6
+		"https://[2001:db8::1]/00/006141411234567890",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}",
+		"^00006141411234567890",
+		"^00006141411234567890",
+		"(00)006141411234567890",
+		"{\"00\":\"006141411234567890\"}");
+
+	test_parseDLuri(ctx, false,  "https://[fe80::1%25lo]/00/006141411234567890", "", "", "", "", "", "", "", "");	// IPv6 zone identifiers not useful
+	test_parseDLuri(ctx, false,  "https://$a/00/006141411234567890", "", "", "", "", "", "", "", "");		// Bad character in domain
+	test_parseDLuri(ctx, false,  "https://a$/00/006141411234567890", "", "", "", "", "", "", "", "");		// Bad character in domain
 
 	test_parseDLuri(ctx, false,					// No domain
 		"https://00/006141411234567890",
