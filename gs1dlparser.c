@@ -40,9 +40,10 @@
 
 // Add to the AI buffer without overflowing
 #define writeAIbuf(v,l) do {				\
-	if (strlen(ctx->aiBuf) + l > GS1_DL_MAX_AI_BUF)	\
+	if (aiBufLen + (l) > GS1_DL_MAX_AI_BUF)		\
 		goto fail;				\
-	strncat(ctx->aiBuf, v, l);			\
+	memcpy(ctx->aiBuf + aiBufLen, v, l);		\
+	aiBufLen += (l);				\
 } while (0)
 
 
@@ -187,9 +188,9 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 	size_t ailen;
 	ptrdiff_t vallen;
 	char aival[GS1_DL_MAX_AI_LEN+1];	// Unescaped AI value
+	size_t aiBufLen = 0;			// Bytes written to the AI buffer
 
 	ctx->numAIs = 0;
-	*ctx->aiBuf = '\0';
 	*ctx->err = '\0';
 
 	DEBUG_PRINT("\nParsing DL data: %s\n", dlData);
@@ -313,23 +314,23 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 
 		DEBUG_PRINT("    Extracted: (%.*s) %.*s\n", (int)ailen, ai, (int)vallen, aival);
 
-		outai = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of AI for AI data
-		writeAIbuf(ai, ailen);				// Write AI
-		outval = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of value for AI data
-		writeAIbuf(aival, (size_t)vallen);			// Write value
-
-		// Update the AI data
-		if (ctx->numAIs < GS1_DL_MAX_AIS) {
-			ctx->aiData[ctx->numAIs].ai = outai;
-			ctx->aiData[ctx->numAIs].ailen = (short)ailen;
-			ctx->aiData[ctx->numAIs].value = outval;
-			ctx->aiData[ctx->numAIs].vallen = (short)vallen;
-			ctx->aiData[ctx->numAIs].fnc1 = isFNC1required(outai);
-			ctx->numAIs++;
-		} else {
+		if (ctx->numAIs == GS1_DL_MAX_AIS) {
 			strcpy(ctx->err, "Too many AIs");
 			goto fail;
 		}
+
+		outai = ctx->aiBuf + aiBufLen;			// Save start of AI for AI data
+		writeAIbuf(ai, ailen);				// Write AI
+		outval = ctx->aiBuf + aiBufLen;			// Save start of value for AI data
+		writeAIbuf(aival, (size_t)vallen);		// Write value
+
+		// Update the AI data
+		ctx->aiData[ctx->numAIs].ai = outai;
+		ctx->aiData[ctx->numAIs].ailen = (short)ailen;
+		ctx->aiData[ctx->numAIs].value = outval;
+		ctx->aiData[ctx->numAIs].vallen = (short)vallen;
+		ctx->aiData[ctx->numAIs].fnc1 = isFNC1required(outai);
+		ctx->numAIs++;
 	}
 
 	if (qp) {
@@ -356,7 +357,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		ailen = (size_t)(e-p);
 		if (allDigits(p, ailen)) {
 			if (ailen < 2 || ailen > 4) {
-				sprintf(ctx->err, "Stopping. Numeric query parameter that is not a valid AI is illegal: %.*s...",
+				snprintf(ctx->err, sizeof(ctx->err), "Stopping. Numeric query parameter that is not a valid AI is illegal: %.*s...",
 					(ailen<10?(int)ailen:10), p);
 				goto fail;
 			}
@@ -395,23 +396,23 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 
 		DEBUG_PRINT("    Extracted: (%.*s) %.*s\n", (int)ailen, ai, (int)vallen, aival);
 
-		outai = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of AI for AI data
-		writeAIbuf(ai, ailen);				// Write AI
-		outval = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of value for AI data
-		writeAIbuf(aival, (size_t)vallen);			// Write value
-
-		// Update the AI data
-		if (ctx->numAIs < GS1_DL_MAX_AIS) {
-			ctx->aiData[ctx->numAIs].ai = outai;
-			ctx->aiData[ctx->numAIs].ailen = (short)ailen;
-			ctx->aiData[ctx->numAIs].value = outval;
-			ctx->aiData[ctx->numAIs].vallen = (short)vallen;
-			ctx->aiData[ctx->numAIs].fnc1 = isFNC1required(outai);
-			ctx->numAIs++;
-		} else {
+		if (ctx->numAIs == GS1_DL_MAX_AIS) {
 			strcpy(ctx->err, "Too many AIs");
 			goto fail;
 		}
+
+		outai = ctx->aiBuf + aiBufLen;			// Save start of AI for AI data
+		writeAIbuf(ai, ailen);				// Write AI
+		outval = ctx->aiBuf + aiBufLen;			// Save start of value for AI data
+		writeAIbuf(aival, (size_t)vallen);		// Write value
+
+		// Update the AI data
+		ctx->aiData[ctx->numAIs].ai = outai;
+		ctx->aiData[ctx->numAIs].ailen = (short)ailen;
+		ctx->aiData[ctx->numAIs].value = outval;
+		ctx->aiData[ctx->numAIs].vallen = (short)vallen;
+		ctx->aiData[ctx->numAIs].fnc1 = isFNC1required(outai);
+		ctx->numAIs++;
 
 		p = r;
 
@@ -466,7 +467,10 @@ nextPass:
 		if (fixedFirst && !(fixedPass ^ ai.fnc1))
 			continue;
 
-		p += sprintf(p, "%.*s%.*s", ai.ailen, ai.ai, ai.vallen, ai.value);
+		memcpy(p, ai.ai, (size_t)ai.ailen);
+		p += ai.ailen;
+		memcpy(p, ai.value, (size_t)ai.vallen);
+		p += ai.vallen;
 		if (extraFNC1 || ai.fnc1)
 			*p++ = '^';
 	}
@@ -501,7 +505,10 @@ nextPass:
 		if (fixedFirst && !(fixedPass ^ ai.fnc1))
 			continue;
 
-		p += sprintf(p, "(%.*s)", ai.ailen, ai.ai);
+		*p++ = '(';
+		memcpy(p, ai.ai, (size_t)ai.ailen);
+		p += ai.ailen;
+		*p++ = ')';
 		for (j = 0; j < ai.vallen; j++) {
 			if (ai.value[j] == '(')	 // Escape data "("
 				*p++ = '\\';
@@ -538,7 +545,12 @@ nextPass:
 		if (fixedFirst && !(fixedPass ^ ai.fnc1))
 			continue;
 
-		p += sprintf(p, "\"%.*s\":\"", ai.ailen, ai.ai);
+		*p++ = '"';
+		memcpy(p, ai.ai, (size_t)ai.ailen);
+		p += ai.ailen;
+		*p++ = '"';
+		*p++ = ':';
+		*p++ = '"';
 		for (j = 0; j < ai.vallen; j++) {
 			if (ai.value[j] == '\\' || ai.value[j] == '"')		// Escape backslash and double-quote
 				*p++ = '\\';
@@ -563,6 +575,8 @@ nextPass:
 
 #ifdef UNIT_TESTS
 
+#include <assert.h>
+
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-folding-constant"
@@ -581,6 +595,19 @@ nextPass:
 #elif defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
+
+
+/*
+ *  Append formatted text at p, bounded by end, failing the test rather than
+ *  advancing p beyond the buffer if the text does not fit
+ *
+ */
+#define appendf(...) do {						\
+	int n_ = snprintf(p, (size_t)(end - p), __VA_ARGS__);		\
+	TEST_ASSERT(n_ >= 0 && n_ < end - p);				\
+	assert(n_ >= 0 && n_ < end - p);	/* TEST_ASSERT does not return on failure; tell the analysers */	\
+	p += n_;							\
+} while (0)
 
 
 static void test_parseDLuri(struct gs1DLparser *ctx, bool should_succeed, const char *dlData,
@@ -1293,9 +1320,46 @@ static void test_dl_URIunescape(void) {
 }
 
 
+static void test_dl_limits(void) {
+
+	const size_t inlen = GS1_DL_MAX_AIS * (6 + GS1_DL_MAX_AI_LEN) + 64;
+	struct gs1DLparser *ctx = malloc(sizeof(struct gs1DLparser));
+	char *in = malloc(inlen);
+	char *out = malloc(GS1_DL_MAX_OUT_BRKT);
+	char *p;
+	const char *end;
+	int i;
+
+	end = in + inlen;
+
+	// Fill the AI buffer exactly: GS1_DL_MAX_AIS AIs of maximal length
+	p = in + snprintf(in, inlen, "https://a/00/%0*d?", GS1_DL_MAX_AI_LEN, 0);
+	for (i = 1; i < GS1_DL_MAX_AIS; i++)
+		appendf("%04d=%0*d&", 7000 + i, GS1_DL_MAX_AI_LEN, i);
+	*--p = '\0';
+
+	TEST_CHECK(gs1_parseDLuri(ctx, in));
+	TEST_MSG("Err: %s", ctx->err);
+	TEST_CHECK(ctx->numAIs == GS1_DL_MAX_AIS);
+
+	gs1_writeBracketedAIelementString(ctx, false, out);
+	TEST_CHECK(strlen(out) == (2 + 2 + GS1_DL_MAX_AI_LEN) + (GS1_DL_MAX_AIS - 1) * (2 + 4 + GS1_DL_MAX_AI_LEN));
+
+	// One AI too many
+	appendf("&99=X");
+	TEST_CHECK(!gs1_parseDLuri(ctx, in));
+
+	free(out);
+	free(in);
+	free(ctx);
+
+}
+
+
 TEST_LIST = {
 	{ "dl_gs1_parseDLuri", test_dl_parseDLuri },
 	{ "dl_URIunescape", test_dl_URIunescape },
+	{ "dl_limits", test_dl_limits },
 	{ NULL, NULL }
 };
 
