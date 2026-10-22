@@ -1,0 +1,10 @@
+{
+  "threshold": 5,
+  "noSymlinks": true,
+  "mode": "weak",
+  "ignore": [
+    "**/acutest.h",
+    "**/corpus/**",
+    "**/coverage-report/**"
+  ]
+}

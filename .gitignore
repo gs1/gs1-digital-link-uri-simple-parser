@@ -14,3 +14,5 @@ coverage.info
 coverage-report/
 *.gcda
 *.gcno
+super-linter-output/
+super-linter.log

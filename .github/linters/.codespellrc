@@ -1,0 +1,3 @@
+[codespell]
+# Skip vendored and generated files
+skip = */acutest.h,*/corpus/*,*/coverage-report/*

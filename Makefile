@@ -115,7 +115,7 @@ OBJS = $(SRCS:.c=.o)
 DEPS = $(ALL_SRCS:.c=.d) $(TEST_OBJ:.o=.d) $(FUZZER_OBJ:.o=.d)
 
 
-.PHONY: all clean example test coverage fuzzer fuzzer-corpus-seeds
+.PHONY: all clean example test coverage fuzzer fuzzer-corpus-seeds superlinter
 
 default: example
 
@@ -189,6 +189,21 @@ coverage:
 	genhtml coverage.info --output-directory coverage-report
 	@echo
 	@echo "Coverage report: coverage-report/index.html"
+
+#
+#  Run Super Linter locally with the configuration used by CI
+#
+superlinter:
+	docker run --rm \
+		-e RUN_LOCAL=true \
+		-e VALIDATE_ALL_CODEBASE=true \
+		-e DEFAULT_BRANCH=main \
+		-e VALIDATE_GIT_COMMITLINT=false \
+		-e LINTER_RULES_PATH=.github/linters \
+		-e 'FILTER_REGEX_EXCLUDE=(corpus/|coverage-report/)' \
+		$(shell grep -v '^\#' .github/linters/superlinter-disabled.env | grep '=' | sed 's/^/-e /') \
+		-v `pwd`:/tmp/lint \
+		ghcr.io/super-linter/super-linter:v8
 
 #
 #  Seed an empty corpus with the distinct string literals of the unit tests,
