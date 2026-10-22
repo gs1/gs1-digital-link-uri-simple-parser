@@ -1479,10 +1479,75 @@ static void test_dl_limits(void) {
 }
 
 
+/*
+ *  Build a DL URI carrying GS1_DL_MAX_AIS variable-length AIs, each with a
+ *  value of GS1_DL_MAX_AI_LEN repetitions of the given (possibly escaped)
+ *  character
+ *
+ */
+static void buildMaxDLuri(char *in, size_t inlen, const char *c) {
+
+	char *p;
+	const char *end = in + inlen;
+	int i, j;
+
+	p = in + snprintf(in, inlen, "https://a/8004/");
+	for (i = 0; i < GS1_DL_MAX_AIS; i++) {
+		if (i > 0)
+			appendf("%c%04d=", i == 1 ? '?' : '&', 7000 + i);
+		for (j = 0; j < GS1_DL_MAX_AI_LEN; j++)
+			appendf("%s", c);
+	}
+
+}
+
+static void test_dl_outputLimits(void) {
+
+	const size_t inlen = GS1_DL_MAX_AIS * (6 + 3 * GS1_DL_MAX_AI_LEN) + 64;
+	struct gs1DLparser *ctx = malloc(sizeof(struct gs1DLparser));
+	char *in = malloc(inlen);
+	char *out_unbr = malloc(GS1_DL_MAX_OUT_UNBR);
+	char *out_brkt = malloc(GS1_DL_MAX_OUT_BRKT);
+	char *out_json = malloc(GS1_DL_MAX_OUT_JSON);
+
+	TEST_ASSERT(ctx && in && out_unbr && out_brkt && out_json);
+
+	// Each worst case fills its documented output buffer exactly
+
+	buildMaxDLuri(in, inlen, "X");
+	TEST_ASSERT(gs1_parseDLuri(ctx, in));
+	gs1_writeUnbracketedAIelementString(ctx, false, true, out_unbr);
+	TEST_CHECK(strlen(out_unbr) == GS1_DL_MAX_OUT_UNBR - 1);
+
+	buildMaxDLuri(in, inlen, "(");				// Escaped as "\("
+	TEST_ASSERT(gs1_parseDLuri(ctx, in));
+	gs1_writeBracketedAIelementString(ctx, false, out_brkt);
+	TEST_CHECK(strlen(out_brkt) == GS1_DL_MAX_OUT_BRKT - 1);
+
+	buildMaxDLuri(in, inlen, "%22");			// '"' escaped as '\"'
+	TEST_ASSERT(gs1_parseDLuri(ctx, in));
+	gs1_writeJSON(ctx, false, out_json);
+	TEST_CHECK(strlen(out_json) == GS1_DL_MAX_OUT_JSON - 1);
+
+	buildMaxDLuri(in, inlen, "%5C");			// '\' escaped as '\\'
+	TEST_ASSERT(gs1_parseDLuri(ctx, in));
+	gs1_writeJSON(ctx, false, out_json);
+	TEST_CHECK(strlen(out_json) == GS1_DL_MAX_OUT_JSON - 1);
+
+	free(out_json);
+	free(out_brkt);
+	free(out_unbr);
+	free(in);
+	free(ctx);
+
+}
+
+
 TEST_LIST = {
 	{ "dl_gs1_parseDLuri", test_dl_parseDLuri },
 	{ "dl_URIunescape", test_dl_URIunescape },
 	{ "dl_limits", test_dl_limits },
+	{ "dl_outputLimits", test_dl_outputLimits },
 	{ NULL, NULL }
 };
 

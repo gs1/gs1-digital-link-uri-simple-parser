@@ -36,7 +36,7 @@ extern "C" {
 #define GS1_DL_MAX_AIS		64							///< Set to maximum number of AIs in a Digital Link URI
 #define GS1_DL_MAX_AI_BUF	(GS1_DL_MAX_AIS * (4 + GS1_DL_MAX_AI_LEN))		///< Capacity of the internal AI data buffer
 
-#define GS1_DL_MAX_OUT_JSON	(GS1_DL_MAX_AIS * (4 + GS1_DL_MAX_AI_LEN + 6) + 2)	///< Maximum length for JSON output data
+#define GS1_DL_MAX_OUT_JSON	(GS1_DL_MAX_AIS * (4 + GS1_DL_MAX_AI_LEN*2 + 6) + 2)	///< Maximum length for JSON output data; "\"" and "\\" escaped
 #define GS1_DL_MAX_OUT_UNBR	(GS1_DL_MAX_AIS * (4 + GS1_DL_MAX_AI_LEN + 1) + 1)	///< Maximum length for unbracketed AI output data
 #define GS1_DL_MAX_OUT_BRKT	(GS1_DL_MAX_AIS * (4 + GS1_DL_MAX_AI_LEN*2 + 2) + 1)	///< Maximum length for bracketed AI output data; "(" escaped as "\("
 
