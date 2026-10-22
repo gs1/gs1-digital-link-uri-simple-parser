@@ -1453,18 +1453,16 @@ static void test_dl_parseDLuri(void) {
 	 * S4T https://youtu.be/9elyEi1PT00
 	 *
 	 */
-	/*
 	test_parseDLuri(ctx,
 		"https://example.com/00/093123450000000012?4300=GS1+Australia&4301=Michiel+Ruighaver&4302=8+Nexus+Court&4304=Mulgrave&4306=Victoria&4307=AU&420=3170&4308=%2B61412830095&s4t",
-		"^000931234500000000124300GS1+Australia^4301Michiel+Ruighaver^43028+Nexus+Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
-		"^00093123450000000012^4300GS1+Australia^4301Michiel+Ruighaver^43028+Nexus+Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
-		"(00)093123450000000012(4300)GS1+Australia(4301)Michiel+Ruighaver(4302)8+Nexus+Court(4304)Mulgrave(4306)Victoria(4307)AU(420)3170(4308)+61412830095",
-		"{\"00\":\"093123450000000012\",\"4300\":\"GS1+Australia\",\"4301\":\"Michiel+Ruighaver\",\"4302\":\"8+Nexus+Court\",\"4304\":\"Mulgrave\",\"4306\":\"Victoria\",\"4307\":\"AU\",\"420\":\"3170\",\"4308\":\"+61412830095\"}",
-		"^000931234500000000124300GS1+Australia^4301Michiel+Ruighaver^43028+Nexus+Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
-		"^00093123450000000012^4300GS1+Australia^4301Michiel+Ruighaver^43028+Nexus+Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
-		"(00)093123450000000012(4300)GS1+Australia(4301)Michiel+Ruighaver(4302)8+Nexus+Court(4304)Mulgrave(4306)Victoria(4307)AU(420)3170(4308)+61412830095",
-		"{\"00\":\"093123450000000012\",\"4300\":\"GS1+Australia\",\"4301\":\"Michiel+Ruighaver\",\"4302\":\"8+Nexus+Court\",\"4304\":\"Mulgrave\",\"4306\":\"Victoria\",\"4307\":\"AU\",\"420\":\"3170\",\"4308\":\"+61412830095\"}");
-	*/
+		"^000931234500000000124300GS1 Australia^4301Michiel Ruighaver^43028 Nexus Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
+		"^00093123450000000012^4300GS1 Australia^4301Michiel Ruighaver^43028 Nexus Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
+		"(00)093123450000000012(4300)GS1 Australia(4301)Michiel Ruighaver(4302)8 Nexus Court(4304)Mulgrave(4306)Victoria(4307)AU(420)3170(4308)+61412830095",
+		"{\"00\":\"093123450000000012\",\"4300\":\"GS1 Australia\",\"4301\":\"Michiel Ruighaver\",\"4302\":\"8 Nexus Court\",\"4304\":\"Mulgrave\",\"4306\":\"Victoria\",\"4307\":\"AU\",\"420\":\"3170\",\"4308\":\"+61412830095\"}",
+		"^000931234500000000124300GS1 Australia^4301Michiel Ruighaver^43028 Nexus Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
+		"^00093123450000000012^4300GS1 Australia^4301Michiel Ruighaver^43028 Nexus Court^4304Mulgrave^4306Victoria^4307AU^4203170^4308+61412830095",
+		"(00)093123450000000012(4300)GS1 Australia(4301)Michiel Ruighaver(4302)8 Nexus Court(4304)Mulgrave(4306)Victoria(4307)AU(420)3170(4308)+61412830095",
+		"{\"00\":\"093123450000000012\",\"4300\":\"GS1 Australia\",\"4301\":\"Michiel Ruighaver\",\"4302\":\"8 Nexus Court\",\"4304\":\"Mulgrave\",\"4306\":\"Victoria\",\"4307\":\"AU\",\"420\":\"3170\",\"4308\":\"+61412830095\"}");
 
 	free(ctx);
 
