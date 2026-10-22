@@ -717,6 +717,9 @@ static void test_dl_parseDLuri(void) {
 
 	struct gs1DLparser *ctx = malloc(sizeof(struct gs1DLparser));
 
+	TEST_ASSERT(ctx != NULL);
+	assert(ctx != NULL);	// TEST_ASSERT does not return on failure; tell the analysers
+
 	/*
 	 *  Order of expected output params:
 	 *
@@ -1546,6 +1549,9 @@ static void test_dl_limits(void) {
 	const char *end;
 	int i;
 
+	TEST_ASSERT(ctx != NULL && in != NULL && out != NULL);
+	assert(ctx != NULL && in != NULL && out != NULL);	// TEST_ASSERT does not return on failure; tell the analysers
+
 	end = in + inlen;
 
 	// Fill the AI buffer exactly: GS1_DL_MAX_AIS AIs of maximal length
@@ -1621,7 +1627,8 @@ static void test_dl_outputLimits(void) {
 	char *out_brkt = malloc(GS1_DL_MAX_OUT_BRKT);
 	char *out_json = malloc(GS1_DL_MAX_OUT_JSON);
 
-	TEST_ASSERT(ctx && in && out_unbr && out_brkt && out_json);
+	TEST_ASSERT(ctx != NULL && in != NULL && out_unbr != NULL && out_brkt != NULL && out_json != NULL);
+	assert(ctx != NULL && in != NULL && out_unbr != NULL && out_brkt != NULL && out_json != NULL);	// Ditto
 
 	// Each worst case fills its documented output buffer exactly
 

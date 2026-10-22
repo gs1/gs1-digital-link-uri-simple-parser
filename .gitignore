@@ -10,3 +10,7 @@ fuzz-*
 gs1dlparser-fuzzer
 example-bin
 .build-flags
+coverage.info
+coverage-report/
+*.gcda
+*.gcno

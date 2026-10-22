@@ -57,6 +57,18 @@ To build with runtime analyzers (requires LLVM):
 
     make test SANITIZE=yes
 
+To build with MemorySanitizer (requires LLVM):
+
+    make test MSAN=yes
+
+To build with the GCC static analyzer:
+
+    make test CC=gcc ANALYZER=yes
+
+To generate a code coverage report (requires lcov):
+
+    make coverage
+
 To fuzz the input to the parser run the following and follow the emitted instructions (requires LLVM libfuzzer):
 
     make fuzzer

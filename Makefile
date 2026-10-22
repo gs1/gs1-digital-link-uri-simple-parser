@@ -32,15 +32,50 @@ endif
 ifeq ($(SANITIZE),yes)
 CC=clang
 SAN_LDFLAGS = -fuse-ld=lld
-SAN_CFLAGS = -fsanitize=address,leak,undefined$(FUZZER_SAN_OPT) -fno-omit-frame-pointer -fno-optimize-sibling-calls -O1
+SAN_CFLAGS = -fsanitize=address,leak,undefined$(FUZZER_SAN_OPT) -fno-omit-frame-pointer -fno-optimize-sibling-calls
+CFLAGS_O = -O1
 SAN_ENV = ASAN_OPTIONS="symbolize=1 detect_leaks=1" LSAN_OPTIONS="fast_unwind_on_malloc=0:malloc_context_size=50" ASAN_SYMBOLIZER_PATH="$(shell which llvm-symbolizer)"
 endif
 
 ifeq ($(SANITIZE),noleak)
 CC=clang
 SAN_LDFLAGS = -fuse-ld=lld
-SAN_CFLAGS = -fsanitize=address,undefined$(FUZZER_SAN_OPT) -fno-omit-frame-pointer -fno-optimize-sibling-calls -O1
+SAN_CFLAGS = -fsanitize=address,undefined$(FUZZER_SAN_OPT) -fno-omit-frame-pointer -fno-optimize-sibling-calls
+CFLAGS_O = -O1
 SAN_ENV = ASAN_OPTIONS="symbolize=1" LSAN_OPTIONS="fast_unwind_on_malloc=0:malloc_context_size=50" ASAN_SYMBOLIZER_PATH="$(shell which llvm-symbolizer)"
+endif
+
+# MemorySanitizer: detects reads of uninitialised memory. Mutually exclusive
+# with ASAN.
+#
+#   make MSAN=yes test
+#
+ifeq ($(MSAN),yes)
+CC=clang
+SAN_LDFLAGS = -fuse-ld=lld
+SAN_CFLAGS = -fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -fno-optimize-sibling-calls
+CFLAGS_O = -O1
+SAN_ENV = MSAN_SYMBOLIZER_PATH="$(shell which llvm-symbolizer)"
+endif
+
+# Code coverage: builds with gcov instrumentation, runs the tests and
+# generates an HTML report via lcov/genhtml.
+#
+#   make coverage
+#
+ifeq ($(COVERAGE),yes)
+CFLAGS_O = -O0
+COV_CFLAGS = --coverage
+endif
+
+CFLAGS_O ?= -O2
+
+# GCC static analyser
+#
+#   make ANALYZER=yes CC=gcc test
+#
+ifeq ($(ANALYZER),yes)
+ANALYZER_CFLAGS = -fanalyzer
 endif
 
 ifneq ($(shell uname -s),Darwin)
@@ -53,8 +88,14 @@ CFLAGS_FORTIFY =
 NPROC = sysctl -n hw.ncpu
 endif
 
+# MemorySanitizer does not intercept the fortified libc functions, so the
+# writes that they make would appear uninitialised
+ifeq ($(MSAN),yes)
+CFLAGS_FORTIFY =
+endif
+
 LDLIBS = -lc
-CFLAGS = -g -O2 $(CFLAGS_FORTIFY) -Wall -Wextra -Wconversion -Wformat -Wformat-security -Wdeclaration-after-statement -pedantic -Werror -MMD -fPIC $(SAN_CFLAGS) $(DEBUG_CFLAGS) $(SLOW_TESTS_CFLAGS)
+CFLAGS = -std=c99 -g $(CFLAGS_O) $(CFLAGS_FORTIFY) -Wall -Wextra -Wconversion -Wformat=2 -Wshadow -Wdeclaration-after-statement -pedantic -Wundef -Wnull-dereference -Wstrict-prototypes -Werror -fstack-protector-strong -MMD -fPIC $(SAN_CFLAGS) $(COV_CFLAGS) $(ANALYZER_CFLAGS) $(DEBUG_CFLAGS)
 
 EXAMPLE_BIN = example-bin
 EXAMPLE_SRC = example.c
@@ -74,7 +115,7 @@ OBJS = $(SRCS:.c=.o)
 DEPS = $(ALL_SRCS:.c=.d) $(TEST_OBJ:.o=.d) $(FUZZER_OBJ:.o=.d)
 
 
-.PHONY: all clean example test fuzzer fuzzer-corpus-seeds
+.PHONY: all clean example test coverage fuzzer fuzzer-corpus-seeds
 
 default: example
 
@@ -118,7 +159,7 @@ $(EXAMPLE_BIN): $(OBJS) $(EXAMPLE_OBJ)
 #  Test binary
 #
 $(TEST_BIN): $(TEST_OBJ)
-	$(CC) $(CFLAGS) $(TEST_OBJ) -o $(TEST_BIN)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_OBJ) -o $(TEST_BIN)
 
 
 #
@@ -139,6 +180,15 @@ example: $(EXAMPLE_BIN)
 
 test: $(TEST_BIN)
 	$(SAN_ENV) ./$(TEST_BIN) $(TEST)
+
+coverage:
+	$(MAKE) clean
+	$(MAKE) COVERAGE=yes test
+	lcov --capture --directory . --output-file coverage.info
+	lcov --remove coverage.info --ignore-errors unused '*/acutest.h' --output-file coverage.info
+	genhtml coverage.info --output-directory coverage-report
+	@echo
+	@echo "Coverage report: coverage-report/index.html"
 
 #
 #  Seed an empty corpus with the distinct string literals of the unit tests,
@@ -176,6 +226,7 @@ fuzzer: $(FUZZER_BIN) fuzzer-corpus-seeds | $(FUZZER_CORPUS)/
 	@echo
 
 clean:
-	$(RM) $(OBJS) $(TEST_OBJ) $(FUZZER_OBJ) $(EXAMPLE_OBJ) $(EXAMPLE_BIN) $(TEST_BIN) $(FUZZER_BIN) $(DEPS) $(BUILD_FLAGS_STAMP)
+	$(RM) $(OBJS) $(TEST_OBJ) $(FUZZER_OBJ) $(EXAMPLE_OBJ) $(EXAMPLE_BIN) $(TEST_BIN) $(FUZZER_BIN) $(DEPS) $(BUILD_FLAGS_STAMP) $(TEST_OBJ:.o=.gcda) $(TEST_OBJ:.o=.gcno) coverage.info
+	$(RM) -r coverage-report
 
 -include $(DEPS)
