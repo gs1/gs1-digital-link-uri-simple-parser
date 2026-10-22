@@ -1,0 +1,61 @@
+---
+name: "CodeQL"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: [main]
+  schedule:
+    - cron: '27 9 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.repository == 'gs1/gs1-digital-link-uri-simple-parser'
+    name: Analyze
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - 'actions'
+          - 'c-cpp'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+
+      #
+      #  The fuzzer is not built since CodeQL hangs on it in the Syntax
+      #  Engine
+      #
+      - if: matrix.language == 'c-cpp'
+        name: Build C
+        run: |
+          make -j "$(nproc)"
+          make -j "$(nproc)" test
+
+      - if: matrix.language == 'actions'
+        name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
