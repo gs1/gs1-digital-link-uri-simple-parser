@@ -22,7 +22,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "gs1dlparser.h"
 
@@ -131,30 +132,45 @@ static bool allDigits(const char *str, size_t len) {
 }
 
 
+static inline uint8_t hex_nibble(char c) {
+	if (c >= '0' && c <= '9') return (uint8_t)(c - '0');
+	if (c >= 'A' && c <= 'F') return (uint8_t)(c - 'A' + 10);
+	if (c >= 'a' && c <= 'f') return (uint8_t)(c - 'a' + 10);
+	return UINT8_MAX;
+}
+
+
 /*
  *  Decode a percent-encoded input
  *
+ *  Returns the decoded length, 0 if the input decodes to an illegal null, or
+ *  -1 if the decoded input does not fit within maxlen.
+ *
  */
-static size_t URIunescape(char *out, size_t maxlen, const char *in, const size_t inlen, bool is_query_component) {
+static ptrdiff_t URIunescape(char *out, size_t maxlen, const char *in, const size_t inlen, bool is_query_component) {
 
 	size_t i, j;
-	char hex[3] = { 0 };
 
 	for (i = 0, j = 0; i < inlen && j < maxlen; i++, j++) {
-		if (i < inlen - 2 && in[i] == '%' && isxdigit(in[i+1]) && isxdigit(in[i+2])) {
-			hex[0] = in[i+1];
-			hex[1] = in[i+2];
-			out[j] = (char)strtoul(hex, NULL, 16);
+		if (i + 2 < inlen && in[i] == '%') {
+			uint8_t hi = hex_nibble(in[i+1]);
+			uint8_t lo = hex_nibble(in[i+2]);
+			if (hi == UINT8_MAX || lo == UINT8_MAX) {	// Invalid hex character
+				out[j] = '%';
+				continue;
+			}
+			out[j] = (char)((hi << 4) | lo);
+			if (out[j] == 0)				// Illegal null
+				return 0;
 			i += 2;
 		} else if (is_query_component && in[i] == '+')
 			out[j] = ' ';
-		else {
+		else
 			out[j] = in[i];
-		}
 	}
 	out[j] = '\0';
 
-	return j;
+	return (i == inlen) ? (ptrdiff_t)j : -1;
 
 }
 
@@ -168,7 +184,8 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 	char *dp = NULL;			// DL path info
 	bool ret;
 	size_t i;
-	size_t ailen, vallen;
+	size_t ailen;
+	ptrdiff_t vallen;
 	char aival[GS1_DL_MAX_AI_LEN+1];	// Unescaped AI value
 
 	ctx->numAIs = 0;
@@ -275,8 +292,13 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		}
 
 		// Reverse percent encoding
-		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, r, (size_t)(p-r), false)) == 0) {
-			sprintf(ctx->err, "Decoded AI (%.*s) from DL path info too long", (int)ailen, ai);
+		vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, r, (size_t)(p-r), false);
+		if (vallen < 0) {
+			snprintf(ctx->err, sizeof(ctx->err), "Decoded AI (%.*s) from DL path info too long", (int)ailen, ai);
+			goto fail;
+		}
+		if (vallen == 0) {
+			snprintf(ctx->err, sizeof(ctx->err), "Decoded AI (%.*s) from DL path info contains illegal null character", (int)ailen, ai);
 			goto fail;
 		}
 
@@ -284,7 +306,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		if (ailen == 2 && strncmp(ai, "01", 2) == 0 &&
 		    (vallen == 13 || vallen == 12 || vallen == 8)) {
 			for (i = 0; i <= 13; i++)
-				aival[13-i] = vallen >= i+1 ? aival[vallen-i-1] : '0';
+				aival[13-i] = vallen >= (ptrdiff_t)(i+1) ? aival[(size_t)vallen-i-1] : '0';
 			aival[14] = '\0';
 			vallen = 14;
 		}
@@ -294,7 +316,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		outai = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of AI for AI data
 		writeAIbuf(ai, ailen);				// Write AI
 		outval = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of value for AI data
-		writeAIbuf(aival, vallen);			// Write value
+		writeAIbuf(aival, (size_t)vallen);			// Write value
 
 		// Update the AI data
 		if (ctx->numAIs < GS1_DL_MAX_AIS) {
@@ -352,8 +374,13 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		}
 
 		// Reverse percent encoding
-		if ((vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, e, (size_t)(r-e), true)) == 0) {
-			sprintf(ctx->err, "Decoded AI (%.*s) value from DL query params too long", (int)ailen, ai);
+		vallen = URIunescape(aival, GS1_DL_MAX_AI_LEN, e, (size_t)(r-e), true);
+		if (vallen < 0) {
+			snprintf(ctx->err, sizeof(ctx->err), "Decoded AI (%.*s) value from DL query params too long", (int)ailen, ai);
+			goto fail;
+		}
+		if (vallen == 0) {
+			snprintf(ctx->err, sizeof(ctx->err), "Decoded AI (%.*s) value from DL query params contains illegal null character", (int)ailen, ai);
 			goto fail;
 		}
 
@@ -361,7 +388,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		if (ailen == 2 && strncmp(ai, "01", 2) == 0 &&
 		    (vallen == 13 || vallen == 12 || vallen == 8)) {
 			for (i = 0; i <= 13; i++)
-				aival[13-i] = vallen >= i+1 ? aival[vallen-i-1] : '0';
+				aival[13-i] = vallen >= (ptrdiff_t)(i+1) ? aival[(size_t)vallen-i-1] : '0';
 			aival[14] = '\0';
 			vallen = 14;
 		}
@@ -371,7 +398,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData) {
 		outai = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of AI for AI data
 		writeAIbuf(ai, ailen);				// Write AI
 		outval = ctx->aiBuf + strlen(ctx->aiBuf);	// Save start of value for AI data
-		writeAIbuf(aival, vallen);			// Write value
+		writeAIbuf(aival, (size_t)vallen);			// Write value
 
 		// Update the AI data
 		if (ctx->numAIs < GS1_DL_MAX_AIS) {
@@ -925,6 +952,38 @@ static void test_dl_parseDLuri(void) {
 		"(01)12312312312333(22)ABC-123(99)ABC(98)XYZ/987",
 		"{\"01\":\"12312312312333\",\"22\":\"ABC-123\",\"99\":\"ABC\",\"98\":\"XYZ/987\"}");
 
+	// Percent-encoded null in AI value
+	test_parseDLuri(ctx, false, "https://a/01/12312312312333/10/AB%00CD/21/XYZ", "", "", "", "", "", "", "", "");
+	test_parseDLuri(ctx, false, "https://a/01/12312312312333?99=ABC%00DEF", "", "", "", "", "", "", "", "");
+
+	// "+" in path value remains literal; invalid percent-escape retained literally
+	test_parseDLuri(ctx, true,
+		"https://a/01/12312312312333/10/A+B%4gC",
+		"^011231231231233310A+B%4gC",
+		"^0112312312312333^10A+B%4gC",
+		"(01)12312312312333(10)A+B%4gC",
+		"{\"01\":\"12312312312333\",\"10\":\"A+B%4gC\"}",
+		"^011231231231233310A+B%4gC",
+		"^0112312312312333^10A+B%4gC",
+		"(01)12312312312333(10)A+B%4gC",
+		"{\"01\":\"12312312312333\",\"10\":\"A+B%4gC\"}");
+
+	// Maximum AI value length
+	test_parseDLuri(ctx, true,
+		"https://a/01/12312312312333?99=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"^011231231231233399AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"^0112312312312333^99AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"(01)12312312312333(99)AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"{\"01\":\"12312312312333\",\"99\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+		"^011231231231233399AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"^0112312312312333^99AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"(01)12312312312333(99)AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"{\"01\":\"12312312312333\",\"99\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}");
+
+	// Decoded AI value too long
+	test_parseDLuri(ctx, false, "https://a/01/12312312312333/10/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "", "", "", "", "", "", "");
+	test_parseDLuri(ctx, false, "https://a/01/12312312312333?99=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "", "", "", "", "", "", "");
+
 	test_parseDLuri(ctx, true,
 		"https://a/01/12312312312333/22/TEST/10/ABC/21/XYZ#fragmemt",	// Ignore fragment after path info
 		"^011231231231233322TEST^10ABC^21XYZ",
@@ -1171,11 +1230,11 @@ static void test_URIunescape(const char *in, const char *expect_path, const char
 
 	char out[GS1_DL_MAX_AI_LEN+1];
 
-	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in), false) == strlen(expect_path));
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in), false) == (ptrdiff_t)strlen(expect_path));
 	TEST_CHECK(strcmp(out, expect_path) == 0);
 	TEST_MSG("Given: %s; Got: %s; Expected query component: %s", in, out, expect_path);
 
-	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in), true) == strlen(expect_query));
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, in, strlen(in), true) == (ptrdiff_t)strlen(expect_query));
 	TEST_CHECK(strcmp(out, expect_query) == 0);
 	TEST_MSG("Given: %s; Got: %s; Expected path component: %s", in, out, expect_query);
 
@@ -1202,28 +1261,34 @@ static void test_dl_URIunescape(void) {
 	test_URIunescape("A%FFB", "A" "\xFF" "B", "A" "\xFF" "B");	// Case mixing
 	test_URIunescape("A%4FB", "AOB", "AOB");
 	test_URIunescape("A%4fB", "AOB", "AOB");
+	test_URIunescape("%2B", "+", "+");				// Encoded "+" is literal, not a space
 	test_URIunescape("A%4gB", "A%4gB", "A%4gB");			// Non hex digit
 	test_URIunescape("A%4GB", "A%4GB", "A%4GB");			// Non hex digit
 	test_URIunescape("A%g4B", "A%g4B", "A%g4B");			// Non hex digit
 	test_URIunescape("A%G4B", "A%G4B", "A%G4B");			// Non hex digit
 
-	// Check that \0 is sane, although we are only working with strings
-	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "A%00B", 5, false) == 3);
-	TEST_CHECK(memcmp(out, "A" "\x00" "B", 4) == 0);
+	// Check that \0 is trapped as an illegal character
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "A%00B", 5, false) == 0);
 
 	// Truncated input
 	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "ABCD", 2, false) == 2);
 	TEST_CHECK(memcmp(out, "AB", 3) == 0);				// Includes \0
 
+	// Lone '%' must not read past inlen
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "%41", 1, false) == 1);
+	TEST_CHECK(memcmp(out, "%", 2) == 0);				// Includes \0
+
+	// Truncated escape stays literal
+	TEST_CHECK(URIunescape(out, GS1_DL_MAX_AI_LEN, "%4", 2, false) == 2);
+	TEST_CHECK(memcmp(out, "%4", 3) == 0);				// Includes \0
+
 	// Truncated output
-	TEST_CHECK(URIunescape(out, 2, "ABCD", 4, false) == 2);
-	TEST_CHECK(memcmp(out, "AB", 3) == 0);				// Includes \0
+	TEST_CHECK(URIunescape(out, 2, "ABCD", 4, false) == -1);
 
-	TEST_CHECK(URIunescape(out, 1, "ABCD", 4, false) == 1);
-	TEST_CHECK(memcmp(out, "A", 2) == 0);				// Includes \0
+	TEST_CHECK(URIunescape(out, 1, "ABCD", 4, false) == -1);
 
-	TEST_CHECK(URIunescape(out, 0, "ABCD", 4, false) == 0);
-	TEST_CHECK(memcmp(out, "", 1) == 0);
+	TEST_CHECK(URIunescape(out, 0, "ABCD", 4, false) == -1);
+	TEST_CHECK(memcmp(out, "", 1) == 0);				// Includes \0
 
 }
 
