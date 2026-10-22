@@ -41,6 +41,11 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	if (strlen(argv[1]) >= sizeof(in)) {
+		printf("Error: Input exceeds %d characters\n", (int)sizeof(in) - 1);
+		return 1;
+	}
+
 	strcpy(in, argv[1]);
 
 	if (!gs1_parseDLuri(&ctx, in)) {
