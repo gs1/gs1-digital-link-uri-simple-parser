@@ -39,11 +39,11 @@ specific language governing permissions and limitations under the License.
 Documentation
 -------------
 
-The interface is straightforward. Refer to the `gs1dlparser.h` header file fpr API documentation and
-the `example.c` commandline tool for example use.
+The interface is straightforward. Refer to the `gs1dlparser.h` header file for API documentation and
+the `example.c` command-line tool for example use.
 
 
-### Linux and MacOS
+### Linux and macOS
 
 To build the library and run the unit tests:
 

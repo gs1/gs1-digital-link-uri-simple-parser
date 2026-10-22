@@ -90,7 +90,7 @@ bool gs1_parseDLuri(struct gs1DLparser *ctx, char *dlData);
  *
  *  @param [in,out] ctx ::gs1DLparser context
  *  @param [in] fixedFirst If true, sort predefined fixed-length AIs ahead of the others in the output
- *  @param [in] extraFNC1 If true, emit superflous FNC1 separaters between each AI, even when not strictly required
+ *  @param [in] extraFNC1 If true, emit superfluous FNC1 separators between each AI, even when not strictly required
  *  @param [out] out User-provided buffer into which the element data will be written. The buffer must be at least ::GS1_DL_MAX_OUT_UNBR bytes for general inputs.
  */
 void gs1_writeUnbracketedAIelementString(struct gs1DLparser *ctx, bool fixedFirst, bool extraFNC1, char *out);

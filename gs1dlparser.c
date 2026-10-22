@@ -73,7 +73,7 @@ static inline bool isBadDomainChar(char c) {
  *
  *  These are used to identify the beginning of the DL pathinfo part.
  *
- *  The list is subject to revision as new identfier keys are introduced.
+ *  The list is subject to revision as new identifier keys are introduced.
  *
  */
 static const char* dl_pkeys[] = {

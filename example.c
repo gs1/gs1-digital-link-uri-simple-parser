@@ -1,5 +1,5 @@
 /**
- * GS1 Digital Link URI parser example commandline application
+ * GS1 Digital Link URI parser example command-line application
  *
  * @author Copyright (c) 2021-2023 GS1 AISBL.
  *
